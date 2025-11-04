@@ -2,6 +2,7 @@
 hr-aihelper-bot
 
 git clone https://github.com/x-ViRKiS-x/hr-aihelper-bot.git
+
 cd hr-aihelper-bot
 
 python -m venv venv
