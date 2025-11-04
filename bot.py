@@ -4,6 +4,7 @@ import random
 import telebot
 from telebot import types
 import time
+from premium_manager import check_daily_limit, get_user_stats 
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -96,15 +97,44 @@ def start_handler(message):
 def find_candidates_handler(message):
     """Проверяем лимиты перед поиском"""
     user_id = message.chat.id
-    if not check_daily_limit(user_id, 'searches'):
-        bot.send_message(message.chat.id, 
-            "❌ Лимит бесплатных поисков исчерпан!\n"
-            "Перейдите на премиум для неограниченного доступа: /premium")
+    user_stats = get_user_stats(user_id)
+    
+    if not user_stats['is_premium'] and user_stats['searches_left'] <= 0:
+        markup = types.InlineKeyboardMarkup()
+        btn_premium = types.InlineKeyboardButton("💳 Купить премиум", callback_data="buy_premium")
+        markup.add(btn_premium)
+        
+        bot.send_message(message.chat.id,
+            f"❌ Лимит бесплатных поисков исчерпан!\n"
+            f"Использовано: {user_stats['searches_used']}/3\n\n"
+            "🎁 Перейдите на премиум для неограниченного доступа:",
+            reply_markup=markup)
         return
     
-    bot.send_message(message.chat.id, "Введите навыки для поиска...")
+    if not check_daily_limit(user_id, 'searches'):
+        bot.send_message(message.chat.id, "Ошибка системы лимитов")
+        return
+        
+    bot.send_message(message.chat.id, 
+        f"🔍 Поиск кандидатов... (осталось {user_stats['searches_left']-1} бесплатных поисков)\n"
+        "Введите навыки для поиска (например: Python JavaScript):")
     user_states[message.chat.id] = "SEARCHING"
 
+# Добавляем команду для проверки статуса
+@bot.message_handler(commands=['status'])
+def status_handler(message):
+    """Показывает текущий статус пользователя"""
+    user_stats = get_user_stats(message.chat.id)
+    
+    if user_stats['is_premium']:
+        status_text = "🎁 ПРЕМИУМ АКТИВЕН"
+    else:
+        status_text = f"🆓 БЕСПЛАТНЫЙ (осталось {user_stats['searches_left']} поисков)"
+    
+    bot.send_message(message.chat.id,
+        f"📊 Ваш статус:\n{status_text}\n"
+        f"Поисков использовано: {user_stats['searches_used']}/3")
+    
 @bot.message_handler(commands=['premium'])
 def premium_info(message):
     """Информация о премиум-подписке"""
