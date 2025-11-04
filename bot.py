@@ -105,6 +105,19 @@ def find_candidates_handler(message):
     bot.send_message(message.chat.id, "Введите навыки для поиска...")
     user_states[message.chat.id] = "SEARCHING"
 
+@bot.message_handler(commands=['premium'])
+def premium_info(message):
+    """Информация о премиум-подписке"""
+    markup = types.InlineKeyboardMarkup()
+    btn_buy = types.InlineKeyboardButton("💳 Купить премиум", callback_data="buy_premium")
+    btn_features = types.InlineKeyboardButton("📋 Возможности", callback_data="premium_features")
+    markup.add(btn_buy, btn_features)
+    
+    bot.send_message(message.chat.id,
+        f"🎁 **Премиум подписка** - {PREMIUM_PRICE} руб/месяц\n\n"
+        "Включает:\n" + "\n".join(f"• {feature}" for feature in PREMIUM_FEATURES),
+        reply_markup=markup)
+
 @bot.message_handler(func=lambda message: user_states.get(message.chat.id) == "SEARCHING")
 def handle_search(message):
     """Обработчик ввода навыков для поиска"""
