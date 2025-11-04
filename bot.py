@@ -20,6 +20,16 @@ bot = telebot.TeleBot(BOT_TOKEN)
 # Состояния пользователей
 user_states = {}
 
+# Настройки премиума
+PREMIUM_PRICE = 490
+PREMIUM_FEATURES = [
+    "Неограниченный поиск кандидатов",
+    "Расширенная аналитика",
+    "Экспорт в Excel/PDF", 
+    "Шаблоны писем кандидатам",
+    "Приоритетная поддержка"
+]
+
 def init_db():
     """Инициализация базы данных"""
     conn = sqlite3.connect(DATABASE_NAME)
@@ -80,60 +90,71 @@ def create_interview_questions(position):
 @bot.message_handler(commands=['start'])
 def start_handler(message):
     """Обработчик команды /start"""
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    btn1 = types.KeyboardButton("🔍 Найти кандидатов")
-    btn2 = types.KeyboardButton("💼 Провести собеседование")
-    markup.add(btn1, btn2)
-    
-    bot.send_message(
-        message.chat.id,
-        "🤖 Добро пожаловать в HR AI Helper!\n"
-        "Выберите действие:",
-        reply_markup=markup
-    )
-    user_states[message.chat.id] = "CHOOSING"
+    try:
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        btn1 = types.KeyboardButton("🔍 Найти кандидатов")
+        btn2 = types.KeyboardButton("💼 Провести собеседование")
+        markup.add(btn1, btn2)
+        
+        bot.send_message(
+            message.chat.id,
+            "🤖 Добро пожаловать в HR AI Helper!\n"
+            "Выберите действие:",
+            reply_markup=markup
+        )
+        user_states[message.chat.id] = "CHOOSING"
+    except Exception as e:
+        logger.error(f"Error in start_handler: {e}")
+        bot.send_message(message.chat.id, "❌ Произошла ошибка. Попробуйте снова.")
 
 @bot.message_handler(func=lambda message: message.text == "🔍 Найти кандидатов")
 def find_candidates_handler(message):
     """Проверяем лимиты перед поиском"""
-    user_id = message.chat.id
-    user_stats = get_user_stats(user_id)
-    
-    if not user_stats['is_premium'] and user_stats['searches_left'] <= 0:
-        markup = types.InlineKeyboardMarkup()
-        btn_premium = types.InlineKeyboardButton("💳 Купить премиум", callback_data="buy_premium")
-        markup.add(btn_premium)
+    try:
+        user_id = message.chat.id
+        user_stats = get_user_stats(user_id)
         
-        bot.send_message(message.chat.id,
-            f"❌ Лимит бесплатных поисков исчерпан!\n"
-            f"Использовано: {user_stats['searches_used']}/3\n\n"
-            "🎁 Перейдите на премиум для неограниченного доступа:",
-            reply_markup=markup)
-        return
-    
-    if not check_daily_limit(user_id, 'searches'):
-        bot.send_message(message.chat.id, "Ошибка системы лимитов")
-        return
+        if not user_stats['is_premium'] and user_stats['searches_left'] <= 0:
+            markup = types.InlineKeyboardMarkup()
+            btn_premium = types.InlineKeyboardButton("💳 Купить премиум", callback_data="buy_premium")
+            markup.add(btn_premium)
+            
+            bot.send_message(message.chat.id,
+                f"❌ Лимит бесплатных поисков исчерпан!\n"
+                f"Использовано: {user_stats['searches_used']}/3\n\n"
+                "🎁 Перейдите на премиум для неограниченного доступа:",
+                reply_markup=markup)
+            return
         
-    bot.send_message(message.chat.id, 
-        f"🔍 Поиск кандидатов... (осталось {user_stats['searches_left']-1} бесплатных поисков)\n"
-        "Введите навыки для поиска (например: Python JavaScript):")
-    user_states[message.chat.id] = "SEARCHING"
+        if not check_daily_limit(user_id, 'searches'):
+            bot.send_message(message.chat.id, "❌ Ошибка системы лимитов")
+            return
+            
+        bot.send_message(message.chat.id, 
+            f"🔍 Поиск кандидатов... (осталось {user_stats['searches_left']-1} бесплатных поисков)\n"
+            "Введите навыки для поиска (например: Python JavaScript):")
+        user_states[message.chat.id] = "SEARCHING"
+    except Exception as e:
+        logger.error(f"Error in find_candidates_handler: {e}")
+        bot.send_message(message.chat.id, "❌ Ошибка при проверке лимитов. Попробуйте снова.")
 
-# Добавляем команду для проверки статуса
 @bot.message_handler(commands=['status'])
 def status_handler(message):
     """Показывает текущий статус пользователя"""
-    user_stats = get_user_stats(message.chat.id)
-    
-    if user_stats['is_premium']:
-        status_text = "🎁 ПРЕМИУМ АКТИВЕН"
-    else:
-        status_text = f"🆓 БЕСПЛАТНЫЙ (осталось {user_stats['searches_left']} поисков)"
-    
-    bot.send_message(message.chat.id,
-        f"📊 Ваш статус:\n{status_text}\n"
-        f"Поисков использовано: {user_stats['searches_used']}/3")
+    try:
+        user_stats = get_user_stats(message.chat.id)
+        
+        if user_stats['is_premium']:
+            status_text = "🎁 ПРЕМИУМ АКТИВЕН"
+        else:
+            status_text = f"🆓 БЕСПЛАТНЫЙ (осталось {user_stats['searches_left']} поисков)"
+        
+        bot.send_message(message.chat.id,
+            f"📊 Ваш статус:\n{status_text}\n"
+            f"Поисков использовано: {user_stats['searches_used']}/3")
+    except Exception as e:
+        logger.error(f"Error in status_handler: {e}")
+        bot.send_message(message.chat.id, "❌ Ошибка при получении статуса.")
     
 @bot.message_handler(commands=['premium'])
 def premium_info(message):
@@ -198,6 +219,10 @@ def default_handler(message):
         bot.send_message(message.chat.id, "Выберите действие из меню ниже 👇")
 
 if __name__ == '__main__':
-    init_db()
     print("🤖 Бот запущен! Остановите сочетанием Ctrl+C")
-    bot.infinity_polling()
+    try:
+        bot.infinity_polling()
+    except KeyboardInterrupt:
+        print("Бот остановлен")
+    except Exception as e:
+        logger.error(f"Bot crashed: {e}")
