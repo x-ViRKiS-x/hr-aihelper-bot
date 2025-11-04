@@ -21,10 +21,13 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS interviews (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            vacancy_type TEXT NOT NULL,
             candidate_name TEXT NOT NULL,
             questions TEXT NOT NULL,
             answers TEXT,
-            score INTEGER,
+            start_time TIMESTAMP NOT NULL,
+            end_time TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
