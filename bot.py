@@ -1,34 +1,107 @@
 import logging
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, ConversationHandler
-import config
-from database import init_db
-from hr_parser import generate_sample_candidates
-from interview_manager import create_interview_questions
+import sqlite3
+import random
+import telebot
+from telebot import types
+import time
 
-# States for conversation
-CHOOSING, SEARCHING, INTERVIEW = range(3)
-
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def start(update: Update, context: CallbackContext):
-    keyboard = [["🔍 Найти кандидатов", "💼 Провести собеседование"]]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+# Конфигурация
+BOT_TOKEN = "8568267520:AAG10Ff-f9562PwrgNFGboVZP-E3ulSi8DY"
+DATABASE_NAME = "hr_bot.db"
+
+# Инициализация бота
+bot = telebot.TeleBot(BOT_TOKEN)
+
+# Состояния пользователей
+user_states = {}
+
+def init_db():
+    """Инициализация базы данных"""
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
     
-    update.message.reply_text(
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS candidates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            skills TEXT NOT NULL,
+            experience TEXT NOT NULL,
+            salary TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    logger.info("Database initialized successfully")
+
+def generate_sample_candidates(skills):
+    """Генерирует синтетические данные кандидатов"""
+    names = ["Алексей Петров", "Мария Сидорова", "Иван Козлов", "Елена Новикова", 
+             "Дмитрий Волков", "Анна Зайцева", "Сергей Орлов", "Ольга Лебедева"]
+    
+    positions = ["Junior", "Middle", "Senior"]
+    technologies = ["Python", "JavaScript", "Java", "C++", "React", "Vue", "Django", "Flask"]
+    
+    candidates = []
+    
+    for i in range(5):
+        name = random.choice(names)
+        level = random.choice(positions)
+        tech_skills = random.sample(technologies, 3)
+        main_skill = random.choice(tech_skills)
+        
+        candidate = {
+            "name": f"{name} ({level} {main_skill} Developer)",
+            "skills": ", ".join(tech_skills),
+            "experience": f"{random.randint(1, 8)} лет",
+            "salary": f"{random.randint(80000, 300000)} руб."
+        }
+        candidates.append(candidate)
+    
+    return candidates
+
+def create_interview_questions(position):
+    """Генерирует вопросы для собеседования"""
+    base_questions = [
+        "Расскажите о вашем опыте работы и наиболее интересных проектах",
+        "Какие технологии и инструменты вы используете в работе?",
+        "Как вы организуете свой рабочий процесс?",
+        "Расскажите о сложной задаче и как вы её решили",
+        "Какие у вас планы по профессиональному развитию?"
+    ]
+    return base_questions[:3]  # Возвращаем первые 3 вопроса
+
+@bot.message_handler(commands=['start'])
+def start_handler(message):
+    """Обработчик команды /start"""
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    btn1 = types.KeyboardButton("🔍 Найти кандидатов")
+    btn2 = types.KeyboardButton("💼 Провести собеседование")
+    markup.add(btn1, btn2)
+    
+    bot.send_message(
+        message.chat.id,
         "🤖 Добро пожаловать в HR AI Helper!\n"
         "Выберите действие:",
-        reply_markup=reply_markup
+        reply_markup=markup
     )
-    return CHOOSING
+    user_states[message.chat.id] = "CHOOSING"
 
-def find_candidates(update: Update, context: CallbackContext):
-    update.message.reply_text("Введите навыки для поиска (например: Python JavaScript):")
-    return SEARCHING
+@bot.message_handler(func=lambda message: message.text == "🔍 Найти кандидатов")
+def find_candidates_handler(message):
+    """Обработчик поиска кандидатов"""
+    bot.send_message(message.chat.id, "Введите навыки для поиска (например: Python JavaScript):")
+    user_states[message.chat.id] = "SEARCHING"
 
-def handle_search(update: Update, context: CallbackContext):
-    skills = update.message.text
+@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == "SEARCHING")
+def handle_search(message):
+    """Обработчик ввода навыков для поиска"""
+    skills = message.text
     candidates = generate_sample_candidates(skills)
     
     response = "🎯 Найденные кандидаты:\n\n"
@@ -38,64 +111,43 @@ def handle_search(update: Update, context: CallbackContext):
         response += f"   Опыт: {candidate['experience']}\n"
         response += f"   Зарплата: {candidate['salary']}\n\n"
     
-    update.message.reply_text(response)
-    return CHOOSING
+    bot.send_message(message.chat.id, response)
+    user_states[message.chat.id] = "CHOOSING"
 
-def start_interview(update: Update, context: CallbackContext):
+@bot.message_handler(func=lambda message: message.text == "💼 Провести собеседование")
+def start_interview_handler(message):
+    """Обработчик начала собеседования"""
     questions = create_interview_questions("Python Developer")
-    context.user_data['interview_questions'] = questions
-    context.user_data['current_question'] = 0
+    user_states[message.chat.id] = "INTERVIEW"
+    user_states[f"{message.chat.id}_questions"] = questions
+    user_states[f"{message.chat.id}_current_question"] = 0
     
-    update.message.reply_text(
+    bot.send_message(
+        message.chat.id,
         "💼 Начинаем собеседование!\n"
         f"Первый вопрос:\n\n{questions[0]}"
     )
-    return INTERVIEW
 
-def handle_interview_answer(update: Update, context: CallbackContext):
-    questions = context.user_data['interview_questions']
-    current = context.user_data['current_question'] + 1
+@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == "INTERVIEW")
+def handle_interview_answer(message):
+    """Обработчик ответов на собеседовании"""
+    questions = user_states.get(f"{message.chat.id}_questions", [])
+    current = user_states.get(f"{message.chat.id}_current_question", 0) + 1
     
     if current < len(questions):
-        context.user_data['current_question'] = current
-        update.message.reply_text(f"Следующий вопрос:\n\n{questions[current]}")
-        return INTERVIEW
+        user_states[f"{message.chat.id}_current_question"] = current
+        bot.send_message(message.chat.id, f"Следующий вопрос:\n\n{questions[current]}")
     else:
-        update.message.reply_text("✅ Собеседование завершено!")
-        return CHOOSING
+        bot.send_message(message.chat.id, "✅ Собеседование завершено!")
+        user_states[message.chat.id] = "CHOOSING"
 
-def error(update: Update, context: CallbackContext):
-    logger.warning('Update "%s" caused error "%s"', update, context.error)
-
-def main():
-    init_db()
-    
-    updater = Updater(config.BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
-    
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
-        states={
-            CHOOSING: [
-                MessageHandler(Filters.regex('^🔍 Найти кандидатов$'), find_candidates),
-                MessageHandler(Filters.regex('^💼 Провести собеседование$'), start_interview),
-            ],
-            SEARCHING: [
-                MessageHandler(Filters.text & ~Filters.command, handle_search)
-            ],
-            INTERVIEW: [
-                MessageHandler(Filters.text & ~Filters.command, handle_interview_answer)
-            ]
-        },
-        fallbacks=[CommandHandler('start', start)]
-    )
-    
-    dp.add_handler(conv_handler)
-    dp.add_error_handler(error)
-    
-    updater.start_polling()
-    print("🤖 Бот запущен! Остановите сочетанием Ctrl+C")
-    updater.idle()
+@bot.message_handler(func=lambda message: True)
+def default_handler(message):
+    """Обработчик всех остальных сообщений"""
+    if user_states.get(message.chat.id) != "SEARCHING" and user_states.get(message.chat.id) != "INTERVIEW":
+        bot.send_message(message.chat.id, "Выберите действие из меню ниже 👇")
 
 if __name__ == '__main__':
-    main()
+    init_db()
+    print("🤖 Бот запущен! Остановите сочетанием Ctrl+C")
+    bot.infinity_polling()
