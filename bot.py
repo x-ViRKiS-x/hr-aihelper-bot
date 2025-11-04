@@ -170,28 +170,65 @@ def start_interview_handler(message):
     """Обработчик начала собеседования"""
     try:
         questions = [
-            "Расскажите о вашем опыте работы",
-            "Какие технологии используете?",
-            "Опишите сложный проект"
+            "1. Расскажите о вашем профессиональном опыте и наиболее значимых проектах",
+            "2. Какие технологии и инструменты вы используете в повседневной работе?",
+            "3. Опишите сложную задачу, которую вам приходилось решать, и как вы с ней справились",
+            "4. Как вы организуете свой рабочий процесс и расставляете приоритеты?",
+            "5. Какие у вас планы по профессиональному развитию на ближайший год?"
         ]
         user_states[message.chat.id] = "INTERVIEW"
         user_states[f"{message.chat.id}_questions"] = questions
         user_states[f"{message.chat.id}_current_question"] = 0
         
-        bot.send_message(message.chat.id, "💼 Собеседование:\n\n" + questions[0])
+        bot.send_message(
+            message.chat.id,
+            "💼 Начинаем собеседование!\n"
+            "Отвечайте на вопросы последовательно.\n\n"
+            f"Всего вопросов: {len(questions)}\n\n"
+            f"{questions[0]}"
+        )
     except Exception as e:
         logger.error(f"Error in start_interview_handler: {e}")
         try:
-            bot.send_message(message.chat.id, "❌ Ошибка собеседования.")
+            bot.send_message(message.chat.id, "❌ Ошибка начала собеседования.")
         except:
             pass
 
+@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == "INTERVIEW")
+def handle_interview_answer(message):
+    """Обработчик ответов на собеседовании"""
+    try:
+        questions = user_states.get(f"{message.chat.id}_questions", [])
+        current = user_states.get(f"{message.chat.id}_current_question", 0) + 1
+        
+        if current < len(questions):
+            user_states[f"{message.chat.id}_current_question"] = current
+            bot.send_message(message.chat.id, f"💼 Вопрос {current+1}/{len(questions)}:\n\n{questions[current]}")
+        else:
+            bot.send_message(message.chat.id, "✅ Собеседование завершено! Спасибо за ответы.")
+            user_states[message.chat.id] = "CHOOSING"
+            # Очищаем временные данные собеседования
+            if f"{message.chat.id}_questions" in user_states:
+                del user_states[f"{message.chat.id}_questions"]
+            if f"{message.chat.id}_current_question" in user_states:
+                del user_states[f"{message.chat.id}_current_question"]
+                
+    except Exception as e:
+        logger.error(f"Error in handle_interview_answer: {e}")
+        try:
+            bot.send_message(message.chat.id, "❌ Ошибка в собеседовании.")
+        except:
+            pass
+        user_states[message.chat.id] = "CHOOSING"
+        
 @bot.message_handler(func=lambda message: True)
 def default_handler(message):
     """Обработчик всех остальных сообщений"""
     try:
-        if user_states.get(message.chat.id) not in ["SEARCHING", "INTERVIEW"]:
-            bot.send_message(message.chat.id, "Выберите действие из меню 👇")
+        current_state = user_states.get(message.chat.id)
+        if current_state not in ["SEARCHING", "INTERVIEW"]:
+            bot.send_message(message.chat.id, "Выберите действие из меню ниже 👇")
+        # Если состояние INTERVIEW или SEARCHING - сообщение обрабатывается другими хендлерами
     except Exception as e:
         logger.error(f"Error in default_handler: {e}")
 
