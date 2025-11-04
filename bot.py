@@ -2,7 +2,7 @@ import logging
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 import config
-from database import init_db, add_candidate, get_candidates
+from database import init_db
 from hr_parser import generate_sample_candidates
 from interview_manager import create_interview_questions
 
@@ -53,7 +53,6 @@ async def start_interview(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return INTERVIEW
 
 async def handle_interview_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Здесь можно добавить анализ ответа
     questions = context.user_data['interview_questions']
     current = context.user_data['current_question'] + 1
     
@@ -88,6 +87,8 @@ def main():
     )
     
     application.add_handler(conv_handler)
+    
+    print("🤖 Бот запущен! Остановите сочетанием Ctrl+C")
     application.run_polling()
 
 if __name__ == '__main__':
