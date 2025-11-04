@@ -94,8 +94,15 @@ def start_handler(message):
 
 @bot.message_handler(func=lambda message: message.text == "🔍 Найти кандидатов")
 def find_candidates_handler(message):
-    """Обработчик поиска кандидатов"""
-    bot.send_message(message.chat.id, "Введите навыки для поиска (например: Python JavaScript):")
+    """Проверяем лимиты перед поиском"""
+    user_id = message.chat.id
+    if not check_daily_limit(user_id, 'searches'):
+        bot.send_message(message.chat.id, 
+            "❌ Лимит бесплатных поисков исчерпан!\n"
+            "Перейдите на премиум для неограниченного доступа: /premium")
+        return
+    
+    bot.send_message(message.chat.id, "Введите навыки для поиска...")
     user_states[message.chat.id] = "SEARCHING"
 
 @bot.message_handler(func=lambda message: user_states.get(message.chat.id) == "SEARCHING")
