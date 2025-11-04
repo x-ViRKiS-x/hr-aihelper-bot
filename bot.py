@@ -1,6 +1,6 @@
 import logging
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, ConversationHandler
 import config
 from database import init_db
 from hr_parser import generate_sample_candidates
@@ -12,22 +12,22 @@ CHOOSING, SEARCHING, INTERVIEW = range(3)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def start(update: Update, context: CallbackContext):
     keyboard = [["🔍 Найти кандидатов", "💼 Провести собеседование"]]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
-    await update.message.reply_text(
+    update.message.reply_text(
         "🤖 Добро пожаловать в HR AI Helper!\n"
         "Выберите действие:",
         reply_markup=reply_markup
     )
     return CHOOSING
 
-async def find_candidates(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Введите навыки для поиска (например: Python JavaScript):")
+def find_candidates(update: Update, context: CallbackContext):
+    update.message.reply_text("Введите навыки для поиска (например: Python JavaScript):")
     return SEARCHING
 
-async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def handle_search(update: Update, context: CallbackContext):
     skills = update.message.text
     candidates = generate_sample_candidates(skills)
     
@@ -38,58 +38,64 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response += f"   Опыт: {candidate['experience']}\n"
         response += f"   Зарплата: {candidate['salary']}\n\n"
     
-    await update.message.reply_text(response)
+    update.message.reply_text(response)
     return CHOOSING
 
-async def start_interview(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def start_interview(update: Update, context: CallbackContext):
     questions = create_interview_questions("Python Developer")
     context.user_data['interview_questions'] = questions
     context.user_data['current_question'] = 0
     
-    await update.message.reply_text(
+    update.message.reply_text(
         "💼 Начинаем собеседование!\n"
         f"Первый вопрос:\n\n{questions[0]}"
     )
     return INTERVIEW
 
-async def handle_interview_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def handle_interview_answer(update: Update, context: CallbackContext):
     questions = context.user_data['interview_questions']
     current = context.user_data['current_question'] + 1
     
     if current < len(questions):
         context.user_data['current_question'] = current
-        await update.message.reply_text(f"Следующий вопрос:\n\n{questions[current]}")
+        update.message.reply_text(f"Следующий вопрос:\n\n{questions[current]}")
         return INTERVIEW
     else:
-        await update.message.reply_text("✅ Собеседование завершено!")
+        update.message.reply_text("✅ Собеседование завершено!")
         return CHOOSING
+
+def error(update: Update, context: CallbackContext):
+    logger.warning('Update "%s" caused error "%s"', update, context.error)
 
 def main():
     init_db()
     
-    application = Application.builder().token(config.BOT_TOKEN).build()
+    updater = Updater(config.BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
     
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
             CHOOSING: [
-                MessageHandler(filters.Regex("^🔍 Найти кандидатов$"), find_candidates),
-                MessageHandler(filters.Regex("^💼 Провести собеседование$"), start_interview),
+                MessageHandler(Filters.regex('^🔍 Найти кандидатов$'), find_candidates),
+                MessageHandler(Filters.regex('^💼 Провести собеседование$'), start_interview),
             ],
             SEARCHING: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_search)
+                MessageHandler(Filters.text & ~Filters.command, handle_search)
             ],
             INTERVIEW: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_interview_answer)
+                MessageHandler(Filters.text & ~Filters.command, handle_interview_answer)
             ]
         },
         fallbacks=[CommandHandler('start', start)]
     )
     
-    application.add_handler(conv_handler)
+    dp.add_handler(conv_handler)
+    dp.add_error_handler(error)
     
+    updater.start_polling()
     print("🤖 Бот запущен! Остановите сочетанием Ctrl+C")
-    application.run_polling()
+    updater.idle()
 
 if __name__ == '__main__':
     main()
